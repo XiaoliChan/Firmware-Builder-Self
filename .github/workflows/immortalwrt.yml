@@ -12,10 +12,6 @@ on:
       - 'scripts/**'
       - '.github/workflows/immortalwrt.yml'
 
-concurrency:
-  group: immortalwrt-${{ matrix.device }}
-  cancel-in-progress: true
-
 permissions:
   contents: write
 
@@ -26,6 +22,10 @@ env:
 jobs:
   build:
     name: ${{ matrix.device }}
+    # 并发控制放 job 级:matrix context 只在这里可用
+    concurrency:
+      group: immortalwrt-${{ matrix.device }}
+      cancel-in-progress: true
     runs-on: ubuntu-latest
     timeout-minutes: 350
     strategy:
