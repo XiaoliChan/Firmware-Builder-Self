@@ -37,10 +37,17 @@ jobs:
           sudo apt-get install -y bzip2 g++ gawk gcc git libncurses-dev make rsync
 
       - name: Free disk space
+        # 完整配方,与 immortalwrt.yml 一致(防 Go/LTO 大件爆盘)
         run: |
           sudo rm -rf /usr/local/lib/android /usr/local/share/boost \
-            /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
-            /usr/share/dotnet /usr/local/share/powershell 2>/dev/null || true
+            /usr/share/dotnet /usr/local/share/powershell \
+            /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache \
+            /usr/local/lib/node_modules /usr/local/share/chromium \
+            /opt/az /opt/google /opt/microsoft /usr/lib/jvm /snap \
+            2>/dev/null || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          sudo swapoff -a 2>/dev/null || true
+          sudo rm -f /mnt/swapfile 2>/dev/null || true
           df -h /
 
       # 顺序必须:builder 根目录先 checkout,源码目录后 checkout。
@@ -60,15 +67,15 @@ jobs:
         id: week
         run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache dl/
-        uses: actions/cache@v4
+      - name: Restore dl/ cache
+        uses: actions/cache/restore@v4
         with:
           path: openwrt/dl
           key: dl-nss-redmi-ax6-${{ steps.week.outputs.week }}
           restore-keys: dl-nss-redmi-ax6-
 
-      - name: Cache toolchain (weekly)
-        uses: actions/cache@v4
+      - name: Restore toolchain cache (weekly)
+        uses: actions/cache/restore@v4
         with:
           path: |
             openwrt/staging_dir/toolchain*
@@ -104,6 +111,25 @@ jobs:
       - name: Build
         working-directory: openwrt
         run: make -j"$(nproc)" || make -j1 V=s
+
+      # 失败也保存(同 immortalwrt.yml 的拆分模式)
+      - name: Save dl/ cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: openwrt/dl
+          key: dl-nss-redmi-ax6-${{ steps.week.outputs.week }}
+
+      - name: Save toolchain cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            openwrt/staging_dir/toolchain*
+            openwrt/staging_dir/host*
+            openwrt/build_dir/toolchain*
+            openwrt/build_dir/host*
+          key: toolchain-nss-redmi-ax6-${{ steps.week.outputs.week }}
 
       - name: Collect images
         run: |

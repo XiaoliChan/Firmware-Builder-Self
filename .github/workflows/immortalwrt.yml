@@ -70,15 +70,15 @@ jobs:
         id: week
         run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
-      - name: Cache dl/
-        uses: actions/cache@v4
+      - name: Restore dl/ cache
+        uses: actions/cache/restore@v4
         with:
           path: immortalwrt/dl
           key: dl-${{ matrix.device }}-${{ steps.week.outputs.week }}
           restore-keys: dl-${{ matrix.device }}-
 
-      - name: Cache toolchain (weekly)
-        uses: actions/cache@v4
+      - name: Restore toolchain cache (weekly)
+        uses: actions/cache/restore@v4
         with:
           path: |
             immortalwrt/staging_dir/toolchain*
@@ -98,6 +98,27 @@ jobs:
       - name: Build
         working-directory: immortalwrt
         run: make -j"$(nproc)" || make -j1 V=s
+
+      # 失败也保存:restore/save 拆分 + if: always(),
+      # 编了几小时后挂在收集/上传步骤不再丢 toolchain/dl 缓存。
+      # save 在 key 已存在时自动跳过(缓存条目不可变,周 key 语义不变)。
+      - name: Save dl/ cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: immortalwrt/dl
+          key: dl-${{ matrix.device }}-${{ steps.week.outputs.week }}
+
+      - name: Save toolchain cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            immortalwrt/staging_dir/toolchain*
+            immortalwrt/staging_dir/host*
+            immortalwrt/build_dir/toolchain*
+            immortalwrt/build_dir/host*
+          key: toolchain-${{ matrix.device }}-${{ steps.week.outputs.week }}
 
       - name: Collect images
         run: |
