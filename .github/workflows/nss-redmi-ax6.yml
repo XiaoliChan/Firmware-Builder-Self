@@ -109,9 +109,10 @@ jobs:
         run: |
           out="out/nss-redmi-ax6"
           mkdir -p "$out"
+          # OpenWrt 镜像文件名中设备 id 用下划线:redmi_ax6;通配符同时罩住两种写法
           find "openwrt/bin/targets/${TARGET_DIR}" -maxdepth 1 -type f \
-            -name '*redmi-ax6*' -exec cp {} "$out"/ \;
-          grep 'redmi-ax6' "openwrt/bin/targets/${TARGET_DIR}/sha256sums" >"$out/sha256sums.txt" || true
+            -name '*redmi*ax6*' -exec cp {} "$out"/ \;
+          grep 'redmi.*ax6' "openwrt/bin/targets/${TARGET_DIR}/sha256sums" >"$out/sha256sums.txt" || true
           cp openwrt/.config "$out/config-full.defconfig"
           cp configs/redmi-ax6-nss.seed configs/feeds.nss "$out/"
           ls -lh "$out"
