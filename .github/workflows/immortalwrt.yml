@@ -49,10 +49,18 @@ jobs:
             rsync swig unzip zlib1g-dev
 
       - name: Free disk space
+        # x86 首跑曾在这里之后爆磁盘(sing-box 编译 no space left on device),
+        # 用完整配方腾出 ~45GB:android/dotnet/jvm/snap/docker/hostedtoolcache/swap
         run: |
           sudo rm -rf /usr/local/lib/android /usr/local/share/boost \
-            /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
-            /usr/share/dotnet /usr/local/share/powershell 2>/dev/null || true
+            /usr/share/dotnet /usr/local/share/powershell \
+            /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache \
+            /usr/local/lib/node_modules /usr/local/share/chromium \
+            /opt/az /opt/google /opt/microsoft /usr/lib/jvm /snap \
+            2>/dev/null || true
+          sudo docker image prune -af >/dev/null 2>&1 || true
+          sudo swapoff -a 2>/dev/null || true
+          sudo rm -f /mnt/swapfile 2>/dev/null || true
           df -h /
 
       - name: Clone ImmortalWrt
