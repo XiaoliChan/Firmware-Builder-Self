@@ -43,6 +43,11 @@ jobs:
             /usr/share/dotnet /usr/local/share/powershell 2>/dev/null || true
           df -h /
 
+      # 顺序必须:builder 根目录先 checkout,源码目录后 checkout。
+      # 反过来时 checkout 到根会 git clean -ffdx,把已 checkout 的 openwrt/ 清掉。
+      - name: Checkout builder repo
+        uses: actions/checkout@v5
+
       - name: Checkout openwrt-nss-edma
         uses: actions/checkout@v5
         with:
@@ -50,9 +55,6 @@ jobs:
           ref: ${{ env.UPSTREAM_REF }}
           fetch-depth: 1
           path: openwrt
-
-      - name: Checkout builder repo
-        uses: actions/checkout@v5
 
       - name: Compute cache week
         id: week
