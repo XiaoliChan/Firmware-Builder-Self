@@ -1,0 +1,86 @@
+#
+# ImmortalWrt master — x86/64 主路由 (AC)
+#
+# seed: scripts/prepare-build.sh 把它复制为 .config 后跑 make defconfig,
+# 依赖自动补全。只写"意图",不写 defconfig 能推导出来的东西。
+# 提炼自原 immortalwrt-x86.config(403 包,2026-09 快照)。
+#
+
+## Target:通用 x86/64,EXT4 + targz 双格式
+CONFIG_TARGET_x86=y
+CONFIG_TARGET_x86_64=y
+CONFIG_TARGET_x86_64_DEVICE_generic=y
+CONFIG_TARGET_ROOTFS_TARGZ=y
+CONFIG_TARGET_ROOTFS_EXT4FS=y
+CONFIG_TARGET_EXT4_RESERVED_PCT=0
+CONFIG_TARGET_EXT4_BLOCKSIZE_4K=y
+CONFIG_TARGET_EXT4_JOURNAL=y
+CONFIG_TARGET_IMAGES_GZIP=y
+## 分区:内核 128M / 根 640M
+CONFIG_TARGET_KERNEL_PARTSIZE=128
+CONFIG_TARGET_ROOTFS_PARTSIZE=640
+
+## LuCI:完整版 + Argon 主题(纯英文,不装 i18n)
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-theme-argon=y
+CONFIG_PACKAGE_luci-app-attendedsysupgrade=y
+CONFIG_PACKAGE_luci-app-package-manager=y
+CONFIG_PACKAGE_luci-app-autoreboot=y
+CONFIG_PACKAGE_luci-app-ramfree=y
+CONFIG_PACKAGE_luci-app-wol=y
+CONFIG_PACKAGE_luci-app-zerotier=y
+CONFIG_PACKAGE_luci-app-rclone_INCLUDE_rclone-webui=y
+CONFIG_PACKAGE_luci-app-rclone_INCLUDE_rclone-ng=y
+
+## Passwall:nftables 透明代理;核心 Xray + SingBox + Haproxy + Geoview
+CONFIG_PACKAGE_luci-app-passwall=y
+CONFIG_PACKAGE_luci-app-passwall_Nftables_Transparent_Proxy=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Geoview=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Haproxy=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_SingBox=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_V2ray_Plugin=y
+CONFIG_PACKAGE_luci-app-passwall_INCLUDE_Xray=y
+## 分流 geo 数据库(大陆白名单/直连分流必需)
+CONFIG_PACKAGE_v2ray-geoip=y
+CONFIG_PACKAGE_v2ray-geosite=y
+
+## DNS / 全锥 NAT(其余 Hysteria/NaiveProxy/SSR 等保持默认关)
+CONFIG_PACKAGE_adguardhome=y
+CONFIG_PACKAGE_chinadns-ng=y
+CONFIG_PACKAGE_iptables-mod-fullconenat=y
+
+## IPv6 隧道协议(旧 config 原有)
+CONFIG_PACKAGE_6in4=y
+CONFIG_PACKAGE_6to4=y
+CONFIG_PACKAGE_6rd=y
+CONFIG_PACKAGE_ipip=y
+CONFIG_PACKAGE_luci-proto-ipip=y
+
+## 调试与运维小工具
+CONFIG_PACKAGE_ip-full=y
+CONFIG_PACKAGE_curl=y
+CONFIG_PACKAGE_wget-ssl=y
+CONFIG_PACKAGE_ethtool=y
+CONFIG_PACKAGE_iperf3=y
+CONFIG_PACKAGE_tcping=y
+CONFIG_PACKAGE_lm-sensors=y
+CONFIG_PACKAGE_unzip=y
+CONFIG_PACKAGE_autocore=y
+CONFIG_PACKAGE_coreutils-base64=y
+CONFIG_PACKAGE_coreutils-nohup=y
+CONFIG_PACKAGE_coreutils-sort=y
+CONFIG_PACKAGE_coreutils-timeout=y
+CONFIG_PACKAGE_luci-lib-ipkg=y
+
+## 网卡与存储:USB 盘 / NTFS / exFAT 自动挂载
+CONFIG_PACKAGE_kmod-tun=y
+CONFIG_PACKAGE_kmod-cryptodev=y
+CONFIG_PACKAGE_automount=y
+CONFIG_PACKAGE_ntfs3-mount=y
+CONFIG_PACKAGE_kmod-fs-exfat=y
+CONFIG_PACKAGE_kmod-fs-f2fs=y
+CONFIG_PACKAGE_kmod-fs-ntfs3=y
+CONFIG_PACKAGE_kmod-fs-vfat=y
+
+## 软路由不带无线:显式关默认的 wpad
+# CONFIG_PACKAGE_wpad-basic-mbedtls is not set

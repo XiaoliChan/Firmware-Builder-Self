@@ -1,0 +1,135 @@
+name: Build NSS Redmi AX6
+
+# openwrt-nss-edma(OpenWrt main 的 EDMA/PPE 分支)+ nss-packages feed。
+# 单设备 redmi_ax6,sysupgrade-only;seed 模式同 immortalwrt.yml。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'configs/redmi-ax6-nss.seed'
+      - 'configs/feeds.nss'
+      - 'scripts/**'
+      - '.github/workflows/nss-redmi-ax6.yml'
+
+concurrency:
+  group: nss-redmi-ax6
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: JuliusBairaktaris/openwrt-nss-edma
+  UPSTREAM_REF: nss-edma-rework
+  TARGET_DIR: qualcommax/ipq807x
+
+jobs:
+  build:
+    name: redmi-ax6
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y bzip2 g++ gawk gcc git libncurses-dev make rsync
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/local/share/boost \
+            /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+            /usr/share/dotnet /usr/local/share/powershell 2>/dev/null || true
+          df -h /
+
+      - name: Checkout openwrt-nss-edma
+        uses: actions/checkout@v5
+        with:
+          repository: ${{ env.UPSTREAM_REPO }}
+          ref: ${{ env.UPSTREAM_REF }}
+          fetch-depth: 1
+          path: openwrt
+
+      - name: Checkout builder repo
+        uses: actions/checkout@v5
+
+      - name: Compute cache week
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache dl/
+        uses: actions/cache@v4
+        with:
+          path: openwrt/dl
+          key: dl-nss-redmi-ax6-${{ steps.week.outputs.week }}
+          restore-keys: dl-nss-redmi-ax6-
+
+      - name: Cache toolchain (weekly)
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/staging_dir/toolchain*
+            openwrt/staging_dir/host*
+            openwrt/build_dir/toolchain*
+            openwrt/build_dir/host*
+          key: toolchain-nss-redmi-ax6-${{ steps.week.outputs.week }}
+          restore-keys: toolchain-nss-redmi-ax6-
+
+      - name: seed → .config
+        run: bash scripts/prepare-build.sh configs/redmi-ax6-nss.seed openwrt configs/feeds.nss
+
+      - name: Set reproducible-build env
+        working-directory: openwrt
+        run: |
+          {
+            echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)"
+            echo "TZ=UTC"
+            echo "LC_ALL=C"
+            echo "KBUILD_BUILD_USER=builder"
+            echo "KBUILD_BUILD_HOST=github"
+          } >>"$GITHUB_ENV"
+
+      - name: Download sources
+        working-directory: openwrt
+        run: |
+          for attempt in 1 2 3; do
+            make download -j"$(nproc)" V=s && break
+            echo "Download attempt $attempt failed; retrying..."
+            sleep 5
+          done
+
+      - name: Build
+        working-directory: openwrt
+        run: make -j"$(nproc)" || make -j1 V=s
+
+      - name: Collect images
+        run: |
+          out="out/nss-redmi-ax6"
+          mkdir -p "$out"
+          find "openwrt/bin/targets/${TARGET_DIR}" -maxdepth 1 -type f \
+            -name '*redmi-ax6*' -exec cp {} "$out"/ \;
+          grep 'redmi-ax6' "openwrt/bin/targets/${TARGET_DIR}/sha256sums" >"$out/sha256sums.txt" || true
+          cp openwrt/.config "$out/config-full.defconfig"
+          cp configs/redmi-ax6-nss.seed configs/feeds.nss "$out/"
+          ls -lh "$out"
+          [[ $(find "$out" -name '*sysupgrade*.bin' | wc -l) -gt 0 ]] || { echo '::error::no sysupgrade image'; exit 1; }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nss-redmi-ax6
+          path: out/
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="nss-redmi-ax6-$(date -u +%Y%m%d)"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" \
+              --title "NSS Redmi AX6 $(date -u +%F)" \
+              --notes "seed: configs/redmi-ax6-nss.seed @ ${{ github.sha }}
+          upstream: $UPSTREAM_REPO@$UPSTREAM_REF (HEAD at build time)"
+          fi
+          gh release upload "$tag" "out/nss-redmi-ax6/*" --clobber

@@ -1,0 +1,121 @@
+name: Build ImmortalWrt
+
+# seed 模式(仿 Qualcommax_NSS_Builder):configs/*.seed → make defconfig → 编译。
+# 配置即意图,依赖由 defconfig 补全;上游 master 更新后重跑 defconfig 自动跟进。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'configs/**'
+      - 'scripts/**'
+      - '.github/workflows/immortalwrt.yml'
+
+concurrency:
+  group: immortalwrt-${{ matrix.device }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  UPSTREAM_REPO: https://github.com/immortalwrt/immortalwrt.git
+  UPSTREAM_REF: master
+
+jobs:
+  build:
+    name: ${{ matrix.device }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - device: x86-64
+            seed: configs/x86.seed
+            target_dir: x86/64
+          - device: jdcloud-re-sp-01b
+            seed: configs/jdcloud.seed
+            target_dir: ramips/mt7621
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update || true
+          sudo apt-get install -y build-essential clang flex bison gawk \
+            gettext git libncurses-dev libssl-dev python3-setuptools \
+            rsync swig unzip zlib1g-dev
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/local/share/boost \
+            /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL \
+            /usr/share/dotnet /usr/local/share/powershell 2>/dev/null || true
+          df -h /
+
+      - name: Clone ImmortalWrt
+        run: git clone --depth 1 --branch "$UPSTREAM_REF" "$UPSTREAM_REPO" immortalwrt
+
+      - name: Compute cache week
+        id: week
+        run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache dl/
+        uses: actions/cache@v4
+        with:
+          path: immortalwrt/dl
+          key: dl-${{ matrix.device }}-${{ steps.week.outputs.week }}
+          restore-keys: dl-${{ matrix.device }}-
+
+      - name: Cache toolchain (weekly)
+        uses: actions/cache@v4
+        with:
+          path: |
+            immortalwrt/staging_dir/toolchain*
+            immortalwrt/staging_dir/host*
+            immortalwrt/build_dir/toolchain*
+            immortalwrt/build_dir/host*
+          key: toolchain-${{ matrix.device }}-${{ steps.week.outputs.week }}
+          restore-keys: toolchain-${{ matrix.device }}-
+
+      - name: seed → .config
+        run: bash scripts/prepare-build.sh "${{ matrix.seed }}" immortalwrt configs/feeds.immortalwrt --prepend
+
+      - name: Download sources
+        working-directory: immortalwrt
+        run: make download -j"$(nproc)"
+
+      - name: Build
+        working-directory: immortalwrt
+        run: make -j"$(nproc)" || make -j1 V=s
+
+      - name: Collect images
+        run: |
+          out="out/${{ matrix.device }}"
+          mkdir -p "$out"
+          find "immortalwrt/bin/targets/${{ matrix.target_dir }}" -maxdepth 1 -type f \
+            -exec cp {} "$out"/ \;
+          cp immortalwrt/.config "$out/config-full.defconfig"
+          cp "${{ matrix.seed }}" "$out/"
+          ls -lh "$out"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-${{ matrix.device }}
+          path: out/
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="immortalwrt-${{ matrix.device }}-$(date -u +%Y%m%d)"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --verify-tag=false \
+              --title "ImmortalWrt ${{ matrix.device }} $(date -u +%F)" \
+              --notes "seed: ${{ matrix.seed }} @ ${{ github.sha }}
+          upstream: immortalwrt $UPSTREAM_REF (HEAD at build time)"
+          fi
+          gh release upload "$tag" "out/${{ matrix.device }}/*" --clobber

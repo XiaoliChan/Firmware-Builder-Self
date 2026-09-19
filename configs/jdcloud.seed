@@ -1,0 +1,45 @@
+#
+# ImmortalWrt master — 京东云无线宝 RE-SP-01B (mt7621, AP)
+#
+# seed:scripts/prepare-build.sh 复制为 .config 后跑 make defconfig。
+# 包列表提炼自 immortalwrt-jdcloud-selector.txt;libc/busybox/dropbear/
+# firewall4/ppp 等默认包由 defconfig 自动带上,不在此重复。
+# 设备包(kmod-mt7603 等)与 profile DEVICE_PACKAGES 一致,显式写出保持明确。
+#
+
+## Target:京东云无线宝·鲁班 RE-SP-01B(mt7621 是 ramips 的 subtarget)
+CONFIG_TARGET_ramips=y
+CONFIG_TARGET_ramips_mt7621=y
+CONFIG_TARGET_ramips_mt7621_DEVICE_jdcloud_re-sp-01b=y
+
+## LuCI:轻量版 + 兼容层 + 中文默认设置
+CONFIG_PACKAGE_luci-light=y
+CONFIG_PACKAGE_luci-compat=y
+CONFIG_PACKAGE_luci-lib-base=y
+CONFIG_PACKAGE_luci-lib-ipkg=y
+CONFIG_PACKAGE_luci-app-package-manager=y
+CONFIG_PACKAGE_default-settings-chn=y
+
+## 基础增强
+CONFIG_PACKAGE_dnsmasq-full=y
+CONFIG_PACKAGE_wpad-openssl=y
+# CONFIG_PACKAGE_wpad-basic-mbedtls is not set
+CONFIG_PACKAGE_libustream-openssl=y
+CONFIG_PACKAGE_apk-openssl=y
+CONFIG_PACKAGE_uboot-envtools=y
+CONFIG_PACKAGE_procd-ujail=y
+
+## mt7621 硬件与 NAT 加速
+CONFIG_PACKAGE_kmod-crypto-hw-eip93=y
+CONFIG_PACKAGE_kmod-gpio-button-hotplug=y
+CONFIG_PACKAGE_kmod-leds-gpio=y
+CONFIG_PACKAGE_kmod-nf-nathelper=y
+CONFIG_PACKAGE_kmod-nf-nathelper-extra=y
+CONFIG_PACKAGE_kmod-nft-offload=y
+
+## 设备包(profile 自带:kmod-mt7603 kmod-mt7615-firmware kmod-mmc-mtk kmod-usb3 automount)
+CONFIG_PACKAGE_kmod-mt7603=y
+CONFIG_PACKAGE_kmod-mt7615-firmware=y
+CONFIG_PACKAGE_kmod-mmc-mtk=y
+CONFIG_PACKAGE_kmod-usb3=y
+CONFIG_PACKAGE_automount=y
