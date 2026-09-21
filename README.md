@@ -1,107 +1,130 @@
 # Firmware-Builder-Self
 
-个人 OpenWrt 固件自动构建仓库 —— GitHub Actions + **seed 配置模式**(仿
-[Qualcommax_NSS_Builder](https://github.com/JuliusBairaktaris/Qualcommax_NSS_Builder) 的
-`devices/*/config` → `make defconfig` 体系)。
+Personal OpenWrt firmware build repository — GitHub Actions + **seed config
+mode** (modeled after
+[Qualcommax_NSS_Builder](https://github.com/JuliusBairaktaris/Qualcommax_NSS_Builder)'s
+`devices/*/config` → `make defconfig` approach).
 
-## 构建目标
+## Build Targets
 
-| 设备 | 角色 | 源码 / 分支 | Target | seed |
+| Device | Role | Source / Branch | Target | Seed |
 |---|---|---|---|---|
-| x86 软路由 | 主路由(AC,passwall 出国) | [immortalwrt](https://github.com/immortalwrt/immortalwrt) `master` | x86/64 generic | `configs/x86.seed` |
-| 京东云无线宝 RE-SP-01B | 无线 AP | 同上 | ramips/mt7621 | `configs/jdcloud.seed` |
-| Redmi AX6 | 无线 AP(NSS 硬件加速) | [openwrt-nss-edma](https://github.com/JuliusBairaktaris/openwrt-nss-edma) `nss-edma-rework` | qualcommax/ipq807x | `configs/redmi-ax6-nss.seed` |
+| x86 box | Main router (gateway) | [immortalwrt](https://github.com/immortalwrt/immortalwrt) `master` | x86/64 generic | `configs/x86.seed` |
+| JDCloud RE-SP-01B | Wireless AP | same | ramips/mt7621 | `configs/jdcloud.seed` |
+| Redmi AX6 | Wireless AP (NSS hardware offload) | [openwrt-nss-edma](https://github.com/JuliusBairaktaris/openwrt-nss-edma) `nss-edma-rework` | qualcommax/ipq807x | `configs/redmi-ax6-nss.seed` |
 
-Redmi AX6 的 NSS 栈(工具链优化、加固选项、NSS kmod 全家、sqm-nss、luci-app-nss 等)
-移植自 Builder 的 `devices/common/config` + `ipq807x-512m` 组(512M 内存档),并在
-`patches/feeds/luci/` 保留了其 DSCP 状态列 patch。Builder 的 `ppe` 相关内容
-(PPE-only 测试线)不适用于本仓库。
+The Redmi AX6 NSS stack (toolchain optimizations, hardening options, the
+full NSS kmod set, sqm-nss, luci-app-nss, …) is ported from the Builder's
+`devices/common/config` + `ipq807x-512m` group (512 MB memory profile), and
+`patches/feeds/luci/` carries its DSCP status-column patch. The Builder's
+`ppe` material (PPE-only test line) does not apply to this repo.
 
-## 工作原理
+## How It Works
 
 ```
 configs/<name>.seed ──┐
 configs/feeds.<line> ─┤→ scripts/prepare-build.sh
 patches/feeds/**      ─┘         │
-                                 ├─ 1. feeds 注入 feeds.conf(--prepend 置顶覆盖 / 默认追加,幂等)
-                                 ├─ 2. feed 补丁(patches/feeds/<feed>/*.patch,三态:打上/已应用跳过/失败)
-                                 ├─ 3. seed → .config → make defconfig(依赖自动补全)
-                                 ├─ 4. 硬校验:seed 显式 =y 的符号必须存活,否则构建失败
-                                 └─ 5. 禁用自定义 feed 的 CONFIG_FEED_*(不打进固件 distfeeds)
+                                 ├─ 1. inject feeds into feeds.conf (--prepend = top priority / append, idempotent)
+                                 ├─ 2. feed patches (patches/feeds/<feed>/*.patch; apply / skip-if-applied / fail)
+                                 ├─ 3. seed → .config → make defconfig (dependencies resolved automatically)
+                                 ├─ 4. hard check: every explicit =y symbol in the seed must survive,
+                                 │     otherwise the build fails with a list
+                                 └─ 5. disable CONFIG_FEED_* for custom feeds (kept out of image distfeeds)
 ```
 
-**seed 只写"意图"**(要什么包、什么分区、什么档位),依赖关系交给 `make defconfig`
-推导 —— 上游更新后重跑 defconfig 自动跟进,配置永不过期。
+**Seeds express intent only** (which packages, partition sizes, memory
+profiles); dependency resolution is left to `make defconfig` — reruns after
+upstream updates pick up changes automatically, so configs never go stale.
 
-**硬校验是安全网**:Kconfig 对改名/依赖缺失的符号是静默丢弃的;脚本会在 defconfig
-后逐一核对 seed 里的显式 `=y` 符号,任何一个没出现在最终 `.config` 就带清单失败
-—— 绝不出"悄悄少包"的固件。
+**The hard check is the safety net**: Kconfig silently drops symbols that
+were renamed or whose dependencies are unmet. The script verifies every
+explicit `=y` line from the seed against the final `.config` and fails with
+a named list otherwise — a build that quietly omits a package never ships.
 
-## 触发与产物
+## Triggers and Artifacts
 
-- **push 到 main**(改动 `configs/**`、`scripts/**`、workflow 文件时)或 **手动**
-  Actions → Run workflow(`workflow_dispatch`)
-- 三台设备并行构建,首跑约 2–3.5h(工具链从零),缓存命中后 30min–1.5h
-- `dl/` 与 toolchain 按**周**缓存(actions/cache)
-- 产物:每次构建的 **artifact**(90 天)+ 自动 **Release**(tag:
-  `immortalwrt-<device>-<日期>` / `nss-redmi-ax6-<日期>`),Release 附最终完整
-  `.config`(`config-full.defconfig`)与所用 seed,可追溯
+- **push to main** (changes under `configs/**`, `scripts/**`, or the workflow
+  files) or manual **Run workflow** (`workflow_dispatch`)
+- All three devices build in parallel; first run ~2–3.5h (toolchain from
+  scratch), 30min–1.5h once caches are warm
+- `dl/` and toolchain are cached **weekly** (actions/cache, restore + save
+  with `if: always()` — a failed run still keeps its caches)
+- Artifacts on every run + automatic **Releases** (tags:
+  `immortalwrt-<device>-<date>` / `nss-redmi-ax6-<date>`), each release
+  carries the final full `.config` (`config-full.defconfig`) and the seed it
+  was built from, for traceability
 
-刷机文件是各 Release 里的 `*-squashfs-sysupgrade.bin`(NSS 线仅 sysupgrade-only,
-无 factory/initramfs;首次需已刷过 OpenWrt)。
+The flashable file in each release is the `*-squashfs-sysupgrade.bin` (the
+NSS line is sysupgrade-only — no factory/initramfs; you must already run
+OpenWrt to flash it).
 
-## 改配置
+## Changing the Configuration
 
-1. 直接编辑 `configs/*.seed`(每文件头部有注释说明来源与取舍)
-2. push → 自动构建;或想验证符号可先本地跑:
+1. Edit `configs/*.seed` directly (each file's header documents its origin
+   and trade-offs)
+2. Push → automatic build; to verify symbols locally first:
    ```sh
-   cd ~/immortalwrt            # 任一 OpenWrt 构建树
+   cd ~/immortalwrt            # any OpenWrt build tree
    cp <seed> .config && make defconfig
    ```
-3. 想用 menuconfig 探索:在真实 checkout 里 `cp seed .config && make menuconfig`,
-   改完 `scripts/diffconfig.sh` 对照,把**意图级**差异写回 seed(不要整份拷贝,那会
-   退化回完整 config 模式)
+3. To explore with menuconfig: `cp seed .config && make menuconfig` in a real
+   checkout, then compare with `scripts/diffconfig.sh` and write **only the
+   intent-level differences** back into the seed — never copy the whole
+   file, or you regress to the full-config mode
 
-各 seed 的详细取舍记录:
-- `configs/x86.seed` —— 提炼自 `reference/immortalwrt-x86.config`(403 包快照);
-  passwall 走 nftables 模式,分流用 v2ray-geoip/geosite
-- `configs/jdcloud.seed` —— 提炼自 `reference/immortalwrt-jdcloud-selector.txt`
-  (包列表,47 包全命中);EIP93 硬件加密,mt7621 注意是 ramips 的 subtarget
-- `configs/redmi-ax6-nss.seed` —— NSS 栈对齐 Builder edma-nss variant;自选包
-  (wpad-openssl / luci-app-dawn / luci-app-statistics / 运维工具)提炼自
-  `reference/openwrt-ipq-redmi-ax6.config`(旧 qosmio main-nss 时代的配置)
+Per-seed provenance:
+- `configs/x86.seed` — distilled from `reference/immortalwrt-x86.config`
+  (a 403-package snapshot); passwall runs in nftables mode, splitting via
+  v2ray-geoip/geosite
+- `configs/jdcloud.seed` — distilled from
+  `reference/immortalwrt-jdcloud-selector.txt` (package list; all 47
+  packages hit); EIP93 hardware crypto. Note mt7621 is a ramips subtarget
+- `configs/redmi-ax6-nss.seed` — NSS stack aligned with the Builder's
+  edma-nss variant; user picks (wpad-openssl / luci-app-dawn /
+  luci-app-statistics / ops tools) distilled from
+  `reference/openwrt-ipq-redmi-ax6.config` (legacy qosmio main-nss era)
 
-## 目录结构
+## Layout
 
 ```
 ├── .github/workflows/
 │   ├── immortalwrt.yml      # x86-64 + jdcloud matrix
-│   └── nss-redmi-ax6.yml    # 单设备
-├── configs/                 # 生效配置(seed + feeds 注入表)
-├── patches/feeds/           # feed 补丁(Builder 移植)
-├── scripts/prepare-build.sh # 通用准备脚本
-└── reference/               # 原始出处文件(仅存档,不参与构建)
+│   └── nss-redmi-ax6.yml    # single device
+├── configs/                 # active configuration (seeds + feed injections)
+├── patches/feeds/           # feed patches (ported from the Builder)
+├── scripts/prepare-build.sh # shared preparation script
+└── reference/               # original source files (archive only, not built)
 ```
 
-## 背景:PPE / NSS / EDMA
+## Background: PPE vs NSS vs EDMA
 
-IPQ807x 芯片上有两条平行的硬件加速路线 + 一条公共通道:
+The IPQ807x SoC has two parallel hardware acceleration paths plus one shared
+transport:
 
-- **EDMA** — 以太网 DMA 驱动(搬运工,所有要 CPU 过手的包必经;已进 openwrt 主线)
-- **PPE** — 交换机侧流表引擎(硬件转发/NAT,全开源;基础驱动已进主线
-  [PR #22381](https://github.com/openwrt/openwrt/pull/22381),完全体
-  [PR #24806](https://github.com/openwrt/openwrt/pull/24806) 审查中)
-- **NSS** — 独立加速核 + 闭源固件 + ECM(性能上限最高、含 WiFi 卸载;因固件
-  blob 永不进主线,只能活在 fork —— 即本仓库 NSS 线用的 nss-edma)
+- **EDMA** — the Ethernet DMA driver (the mover; every packet that needs the
+  CPU passes through it; already in openwrt mainline)
+- **PPE** — the switch-side flow-table engine (hardware forwarding/NAT, fully
+  open source; the base driver is in mainline via
+  [PR #22381](https://github.com/openwrt/openwrt/pull/22381), the full
+  feature set is under review in
+  [PR #24806](https://github.com/openwrt/openwrt/pull/24806))
+- **NSS** — dedicated acceleration cores + closed firmware blob + ECM
+  (highest throughput ceiling, includes Wi-Fi offload; the blob keeps it out
+  of mainline forever — it lives on in forks like nss-edma, which is what
+  this repo's NSS line uses)
 
-Redmi AX6 当 AP 用,主要负载是无线↔有线桥转发,正是 NSS(wifili)最吃的场景。
+The Redmi AX6 serves as an AP, and its main load is Wi-Fi↔Ethernet bridged
+forwarding — exactly the scenario NSS (wifili) is best at.
 
-## 上游与参考
+## Upstream References
 
 - https://github.com/immortalwrt/immortalwrt — ImmortalWrt master
-- https://github.com/JuliusBairaktaris/openwrt-nss-edma — NSS fork(分支
+- https://github.com/JuliusBairaktaris/openwrt-nss-edma — NSS fork (branch
   `nss-edma-rework`)
-- https://github.com/JuliusBairaktaris/Qualcommax_NSS_Builder — seed 模式与 NSS
-  栈的参考实现(其 `docs/CUSTOMIZE.md` 值得一读)
-- https://github.com/JuliusBairaktaris/nss-packages — NSS 包 feed(`edma-nss`)
-- passwall feeds 见 `configs/feeds.immortalwrt`
+- https://github.com/JuliusBairaktaris/Qualcommax_NSS_Builder — reference
+  implementation for the seed mode and the NSS stack (`docs/CUSTOMIZE.md`
+  is worth a read)
+- https://github.com/JuliusBairaktaris/nss-packages — NSS package feed
+  (`edma-nss`)
+- passwall feeds: see `configs/feeds.immortalwrt`
