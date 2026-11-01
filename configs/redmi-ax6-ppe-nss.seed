@@ -20,8 +20,9 @@ CONFIG_TARGET_qualcommax_ipq807x=y
 CONFIG_TARGET_qualcommax_ipq807x_DEVICE_redmi_ax6=y
 # CONFIG_TARGET_ROOTFS_INITRAMFS is not set
 
-## 工具链优化(Builder 同款:GCC15 + LTO + MOLD;CI 走 toolchain 缓存,不用 ccache)
+## 工具链优化(Builder 同款:GCC15 + LTO + MOLD + ccache)
 CONFIG_BINUTILS_USE_VERSION_2_46=y
+CONFIG_CCACHE=y
 CONFIG_DEVEL=y
 CONFIG_GCC_USE_VERSION_15=y
 CONFIG_TARGET_OPTIMIZATION="-O2 -pipe -mcpu=cortex-a53"
@@ -31,7 +32,6 @@ CONFIG_USE_GC_SECTIONS=y
 CONFIG_USE_LTO=y
 CONFIG_USE_MOLD=y
 CONFIG_ZLIB_OPTIMIZE_SPEED=y
-# CONFIG_CCACHE is not set
 
 ## 内核与加固(Builder 同款)
 CONFIG_BUILD_PATENTED=y
