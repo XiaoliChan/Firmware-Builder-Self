@@ -12,6 +12,9 @@ CONFIG_TARGET_ramips=y
 CONFIG_TARGET_ramips_mt7621=y
 CONFIG_TARGET_ramips_mt7621_DEVICE_jdcloud_re-sp-01b=y
 
+## 构建加速:ccache(CI 缓存 .ccache,重复构建时内核/包重编大量命中)
+CONFIG_CCACHE=y
+
 ## SSH:openssh 替代默认 dropbear(与 ppe-nss 线一致;root 登录由
 ## configs/immortalwrt.files 的 sshd_config.d drop-in 恢复 stock 行为)
 CONFIG_PACKAGE_dropbear=n

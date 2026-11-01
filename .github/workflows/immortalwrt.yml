@@ -26,7 +26,8 @@ jobs:
     concurrency:
       group: immortalwrt-${{ matrix.device }}
       cancel-in-progress: true
-    runs-on: ubuntu-latest
+    # 钉住 runner:ccache key 含本机 gcc/as 版本,ubuntu-latest 迁移会让 key 漂移
+    runs-on: ubuntu-26.04
     timeout-minutes: 350
     strategy:
       fail-fast: false
@@ -91,13 +92,39 @@ jobs:
       - name: seed → .config
         run: bash scripts/prepare-build.sh "${{ matrix.seed }}" immortalwrt configs/feeds.immortalwrt --prepend --files configs/immortalwrt.files
 
+      # ccache key 覆盖所有工具链输入(上游 Builder 同款):toolchain 目录树哈希 +
+      # 工具链相关 config 行 + 本机 gcc/as 版本,任一变化都从空缓存开始
+      - name: Compute ccache key
+        id: ccache
+        run: |
+          tree=$(git -C immortalwrt rev-parse HEAD:toolchain)
+          sum=$({
+            echo "$tree"
+            grep -E '^CONFIG_(BINUTILS|GCC|LIBC|MUSL|GLIBC)_' immortalwrt/.config
+            gcc --version; as --version
+          } | sha256sum | cut -c1-16)
+          echo "prefix=ccache-${{ matrix.device }}-$sum-" >>"$GITHUB_OUTPUT"
+
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: immortalwrt/.ccache
+          key: ${{ steps.ccache.outputs.prefix }}${{ github.run_id }}
+          restore-keys: ${{ steps.ccache.outputs.prefix }}
+
       - name: Download sources
         working-directory: immortalwrt
         run: make download -j"$(nproc)"
 
+      # COMPILERCHECK=content:ccache 默认只看编译器版本号,自建 GCC 小改不动版本号会误命中
       - name: Build
         working-directory: immortalwrt
-        run: make -j"$(nproc)" || make -j1 V=s
+        env:
+          CCACHE_COMPILERCHECK: content
+          CCACHE_MAXSIZE: 3G
+        run: |
+          make -j"$(nproc)" || make -j1 V=s
+          immortalwrt/staging_dir/host/bin/ccache -s || true
 
       # 失败也保存:restore/save 拆分 + if: always(),
       # 编了几小时后挂在收集/上传步骤不再丢 toolchain/dl 缓存。
@@ -119,6 +146,15 @@ jobs:
             immortalwrt/build_dir/toolchain*
             immortalwrt/build_dir/host*
           key: toolchain-${{ matrix.device }}-${{ steps.week.outputs.week }}
+
+      # 每次构建存独立 key(避免并发 matrix 抢同一条目),restore-keys 前缀取最新;
+      # 旧条目靠 GitHub 7 天未用/配额 LRU 回收
+      - name: Save ccache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: immortalwrt/.ccache
+          key: ${{ steps.ccache.outputs.prefix }}${{ github.run_id }}
 
       - name: Collect images
         run: |
