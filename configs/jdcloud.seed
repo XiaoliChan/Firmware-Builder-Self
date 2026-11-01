@@ -13,6 +13,8 @@ CONFIG_TARGET_ramips_mt7621=y
 CONFIG_TARGET_ramips_mt7621_DEVICE_jdcloud_re-sp-01b=y
 
 ## 构建加速:ccache(CI 缓存 .ccache,重复构建时内核/包重编大量命中)
+## DEVEL 必须开:CCACHE 符号在高级配置菜单里,不开会被 defconfig 静默丢弃(硬检查拦下)
+CONFIG_DEVEL=y
 CONFIG_CCACHE=y
 
 ## SSH:openssh 替代默认 dropbear(与 ppe-nss 线一致;root 登录由
