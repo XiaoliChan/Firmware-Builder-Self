@@ -1,0 +1,38 @@
+dawn: pin the 2026-10-30 tree with the crash fixes
+
+The feed's pin (2026-06-10) segfaults on openwrt-ppe-nss: all three APs
+running it crash-loop with exit_code 139 (SIGSEGV) within minutes, dying
+around the inter-AP TCP handshake churn (connect_cb / client_notify_state
+in tcpsocket.c), with procd backing off after a dozen respawns. The same
+binary loops on every unit, so it is not a peer-version issue.
+
+The tree after the pin carries the relevant fixes:
+
+- 0a4ce31a5 iwinfo: deal with iwinfo_backends returning NULL
+- 168286e42 ubus: reject beacon reports missing rcpi, rsni, or channel
+- 167d424bb fix: only return true when hostapd_dir is actually configured
+- 0d1ed7fa9 config: default duration to 150, not 0
+  (the old default ships duration '0', which fails beacon requests)
+
+PKG_MIRROR_HASH:=skip: the pin is a moving branch tip and its tarball
+must not share a download name with the feed's own.
+
+--- a/net/dawn/Makefile
++++ b/net/dawn/Makefile
+@@ -5,13 +5,13 @@
+ include $(TOPDIR)/rules.mk
+
+ PKG_NAME:=dawn
+-PKG_SOURCE_DATE:=2026-06-10
++PKG_SOURCE_DATE:=2026-10-30
+ PKG_RELEASE:=1
+
+ PKG_SOURCE_PROTO:=git
+ PKG_SOURCE_URL:=https://github.com/berlin-open-wireless-lab/DAWN.git
+-PKG_SOURCE_VERSION:=806166bce0badb383f72e4942744dab9e26a591f
+-PKG_MIRROR_HASH:=8b5eaa42a2c579c45662fa84ccd9d639a27ec0a43d88a5c812b2e99c11514d02
++PKG_SOURCE_VERSION:=0a4ce31a55121d197d161f5df5be42c02807a1ba
++PKG_MIRROR_HASH:=skip
+
+ PKG_MAINTAINER:=Nick Hainke <vincent@systemli.org>
+ PKG_LICENSE:=GPL-2.0-only
