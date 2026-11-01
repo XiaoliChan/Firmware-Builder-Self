@@ -89,7 +89,7 @@ jobs:
           restore-keys: toolchain-${{ matrix.device }}-
 
       - name: seed → .config
-        run: bash scripts/prepare-build.sh "${{ matrix.seed }}" immortalwrt configs/feeds.immortalwrt --prepend
+        run: bash scripts/prepare-build.sh "${{ matrix.seed }}" immortalwrt configs/feeds.immortalwrt --prepend --files configs/immortalwrt.files
 
       - name: Download sources
         working-directory: immortalwrt

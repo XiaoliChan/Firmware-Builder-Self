@@ -2,7 +2,7 @@
 # ImmortalWrt master — 京东云无线宝 RE-SP-01B (mt7621, AP)
 #
 # seed:scripts/prepare-build.sh 复制为 .config 后跑 make defconfig。
-# 包列表提炼自 immortalwrt-jdcloud-selector.txt;libc/busybox/dropbear/
+# 包列表提炼自 immortalwrt-jdcloud-selector.txt;libc/busybox/
 # firewall4/ppp 等默认包由 defconfig 自动带上,不在此重复。
 # 设备包(kmod-mt7603 等)与 profile DEVICE_PACKAGES 一致,显式写出保持明确。
 #
@@ -11,6 +11,13 @@
 CONFIG_TARGET_ramips=y
 CONFIG_TARGET_ramips_mt7621=y
 CONFIG_TARGET_ramips_mt7621_DEVICE_jdcloud_re-sp-01b=y
+
+## SSH:openssh 替代默认 dropbear(与 ppe-nss 线一致;root 登录由
+## configs/immortalwrt.files 的 sshd_config.d drop-in 恢复 stock 行为)
+CONFIG_PACKAGE_dropbear=n
+CONFIG_PACKAGE_openssh-moduli=y
+CONFIG_PACKAGE_openssh-server=y
+CONFIG_PACKAGE_openssh-sftp-server=y
 
 ## LuCI:轻量版 + 兼容层 + 中文默认设置
 CONFIG_PACKAGE_luci-light=y
