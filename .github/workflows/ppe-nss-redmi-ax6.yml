@@ -5,6 +5,11 @@ name: Build ppe-nss Redmi AX6
 # switchdev / tc),Wi-Fi 数据面走 NSS 固件(nss-wifi-drv,默认开,uci nss-wifi.general.offload 可关)。
 # 单设备 redmi_ax6,sysupgrade-only;seed 模式同 immortalwrt.yml。
 # 旧 vendor NSS 线(qca-nss-drv/ECM/sqm-nss)已随上游归档,见 tag archive/nss-edma-rework-final。
+#
+# 与上游 build-flavour.yml 的刻意差异(他们的多用户基建,单设备自用不抄):
+#   per-release kmod feed 发布 GitHub Pages + /etc/ppe-release + APK 签名、
+#   ALL_KMODS/ImageBuilder 产物、ccache(我们用 toolchain 周缓存)、check-updates 跳过。
+# 其余构建步骤(feeds/patch/符号校验/IGNORE_ERRORS/重试下载)与上游一致。
 
 on:
   workflow_dispatch:
@@ -32,7 +37,7 @@ env:
 jobs:
   build:
     name: redmi-ax6
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04 # 上游同款:apt 依赖列表按此 runner 钉住
     timeout-minutes: 350
     steps:
       - name: Install build dependencies
@@ -57,10 +62,10 @@ jobs:
       # 顺序必须:builder 根目录先 checkout,源码目录后 checkout。
       # 反过来时 checkout 到根会 git clean -ffdx,把已 checkout 的 openwrt/ 清掉。
       - name: Checkout builder repo
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Checkout openwrt-ppe-nss
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.UPSTREAM_REPO }}
           ref: ${{ env.UPSTREAM_REF }}
@@ -73,7 +78,7 @@ jobs:
 
       # key 换新线前缀,restore-keys 兜到旧 nss-redmi-ax6 缓存,首次构建不全冷启
       - name: Restore dl/ cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: openwrt/dl
           key: dl-ppe-nss-redmi-ax6-${{ steps.week.outputs.week }}
@@ -82,7 +87,7 @@ jobs:
             dl-nss-redmi-ax6-
 
       - name: Restore toolchain cache (weekly)
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           path: |
             openwrt/staging_dir/toolchain*
@@ -95,7 +100,7 @@ jobs:
             toolchain-nss-redmi-ax6-
 
       - name: seed → .config
-        run: bash scripts/prepare-build.sh configs/redmi-ax6-ppe-nss.seed openwrt configs/feeds.nss
+        run: bash scripts/prepare-build.sh configs/redmi-ax6-ppe-nss.seed openwrt configs/feeds.nss --files configs/redmi-ax6-ppe-nss.files
 
       - name: Set reproducible-build env
         working-directory: openwrt
@@ -117,21 +122,22 @@ jobs:
             sleep 5
           done
 
+      # IGNORE_ERRORS=m 与上游一致:=m 的包失败跳过不阻塞;镜像内 =y 的包照样硬失败
       - name: Build
         working-directory: openwrt
-        run: make -j"$(nproc)" || make -j1 V=s
+        run: make -j"$(nproc)" IGNORE_ERRORS=m || make -j1 V=s IGNORE_ERRORS=m
 
       # 失败也保存(同 immortalwrt.yml 的拆分模式)
       - name: Save dl/ cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: openwrt/dl
           key: dl-ppe-nss-redmi-ax6-${{ steps.week.outputs.week }}
 
       - name: Save toolchain cache
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           path: |
             openwrt/staging_dir/toolchain*
@@ -154,7 +160,7 @@ jobs:
           [[ $(find "$out" -name '*sysupgrade*.bin' | wc -l) -gt 0 ]] || { echo '::error::no sysupgrade image'; exit 1; }
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ppe-nss-redmi-ax6
           path: out/

@@ -90,6 +90,13 @@ CONFIG_PACKAGE_zram-swap=y
 ## 崩溃取证:重启后把内核日志归档到 /root/pstore
 CONFIG_PACKAGE_kmod-ramoops=y
 
+## SSH:openssh 替代 dropbear(Builder 同款;root 登录由 files overlay 的
+## sshd_config.d/10-root-login.conf 恢复 stock OpenWrt 行为)
+CONFIG_PACKAGE_dropbear=n
+CONFIG_PACKAGE_openssh-moduli=y
+CONFIG_PACKAGE_openssh-server=y
+CONFIG_PACKAGE_openssh-sftp-server=y
+
 ## SSL/apk(openwrt main 系是 apk 包管理)
 CONFIG_LUA_ECO_MBEDTLS=n
 CONFIG_LUA_ECO_OPENSSL=y
@@ -129,7 +136,6 @@ CONFIG_PACKAGE_socat=y
 CONFIG_PACKAGE_tcpdump=y
 
 ## 刻意偏离 Builder 的项:
-##   - 保留 dropbear(用户旧配置默认),不切 openssh-server
 ##   - 不装 luci-app-bcp38(不在国内网络场景)
 ##   - 不开 CONFIG_ALL_KMODS/IB(那是 Builder 给多用户 kmod feed / image picker 的基建)
 ##   - attendedsysupgrade 关闭:自定义内核的固件 ASU 服务的了,开着只会误导

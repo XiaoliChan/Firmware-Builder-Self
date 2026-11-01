@@ -5,17 +5,29 @@
 #   2. seed → .config → make defconfig
 #   3. 硬校验:seed 显式 =y 的符号必须存活(defconfig 静默丢弃 = 构建失败)
 #   4. 禁用自定义 feed 的 CONFIG_FEED_*(不把整个 feed 打进固件 distfeeds)
+#   5. 可选 files overlay:--files <目录> rsync 进源码树 files/(随镜像进 rootfs)
 #
-# 用法: prepare-build.sh <seed 文件> <源码目录> [feeds 文件] [--prepend]
+# 用法: prepare-build.sh <seed 文件> <源码目录> [feeds 文件] [--prepend] [--files <目录>]
 #   feeds 文件:每行一条 "src-git <name> <url>[;<branch>]"。默认追加到末尾;
 #   --prepend 时插到头部(feed 越靠前优先级越高,保持文件内顺序)。
+#   --files:目录相对仓库根,内容叠加到 <源码目录>/files/(Builder 的 overlay 层,
+#   我们单设备单层即可;上游是 common→device→variant 多层)。
 #
 set -euo pipefail
 
-SEED="$1"
-SRC="$2"
-FEEDS_FILE="${3:-}"
-PREPEND="${4:-}"
+POSITIONAL=()
+PREPEND=""
+FILES_DIR=""
+while (($#)); do
+  case "$1" in
+    --prepend) PREPEND="--prepend"; shift ;;
+    --files) FILES_DIR="$2"; shift 2 ;;
+    *) POSITIONAL+=("$1"); shift ;;
+  esac
+done
+SEED="${POSITIONAL[0]}"
+SRC="${POSITIONAL[1]}"
+FEEDS_FILE="${POSITIONAL[2]:-}"
 
 cd "$SRC"
 
@@ -111,6 +123,15 @@ if ((${#FEED_LINES[@]})); then
   done
 fi
 sed -i 's/^CONFIG_FEED_luci_extra=.*/# CONFIG_FEED_luci_extra is not set/' .config || true
+
+# 5. files overlay:叠加到源码树 files/,构建时进镜像 rootfs(uci-defaults、配置 drop-in 等)。
+if [[ -n "$FILES_DIR" ]]; then
+  [[ -d "../$FILES_DIR" ]] || { echo "ERROR: files 目录不存在: $FILES_DIR" >&2; exit 1; }
+  mkdir -p files
+  echo "=== files overlay: $FILES_DIR ==="
+  rsync -a "../$FILES_DIR/" files/
+  (cd files && find . -type f -printf '%p\n' | sort)
+fi
 
 echo "=== .config 摘要 ==="
 grep -E '^CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE)|PARTSIZE' .config || true
