@@ -17,6 +17,7 @@ on:
     branches: [main]
     paths:
       - 'configs/redmi-ax6-ppe-nss.seed'
+      - 'configs/redmi-ax6-ppe-nss.files/**'
       - 'configs/feeds.nss'
       - 'patches/**'
       - 'scripts/**'
