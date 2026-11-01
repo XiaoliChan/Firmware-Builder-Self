@@ -1,28 +1,32 @@
-name: Build NSS Redmi AX6
+name: Build ppe-nss Redmi AX6
 
-# openwrt-nss-edma(OpenWrt main 的 EDMA/PPE 分支)+ nss-packages feed。
+# openwrt-ppe-nss@ppe-nss(OpenWrt main 6.18 + 主线 qca_ppe/qca_edma 驱动)+ nss-packages@ppe-nss
+# (nss-firmware)+ luci fork(luci-app-qca-ppe-qos)。模型:有线 offload 走 PPE(fw4 flowtable /
+# switchdev / tc),Wi-Fi 数据面走 NSS 固件(nss-wifi-drv,默认开,uci nss-wifi.general.offload 可关)。
 # 单设备 redmi_ax6,sysupgrade-only;seed 模式同 immortalwrt.yml。
+# 旧 vendor NSS 线(qca-nss-drv/ECM/sqm-nss)已随上游归档,见 tag archive/nss-edma-rework-final。
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - 'configs/redmi-ax6-nss.seed'
+      - 'configs/redmi-ax6-ppe-nss.seed'
       - 'configs/feeds.nss'
+      - 'patches/**'
       - 'scripts/**'
-      - '.github/workflows/nss-redmi-ax6.yml'
+      - '.github/workflows/ppe-nss-redmi-ax6.yml'
 
 concurrency:
-  group: nss-redmi-ax6
+  group: ppe-nss-redmi-ax6
   cancel-in-progress: true
 
 permissions:
   contents: write
 
 env:
-  UPSTREAM_REPO: JuliusBairaktaris/openwrt-nss-edma
-  UPSTREAM_REF: nss-edma-rework
+  UPSTREAM_REPO: JuliusBairaktaris/openwrt-ppe-nss
+  UPSTREAM_REF: ppe-nss
   TARGET_DIR: qualcommax/ipq807x
 
 jobs:
@@ -34,7 +38,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update || true
-          sudo apt-get install -y bzip2 g++ gawk gcc git libncurses-dev make rsync
+          sudo apt-get install -y bzip2 g++ gawk gcc git glibc-source libncurses-dev make rsync
 
       - name: Free disk space
         # 完整配方,与 immortalwrt.yml 一致(防 Go/LTO 大件爆盘)
@@ -55,7 +59,7 @@ jobs:
       - name: Checkout builder repo
         uses: actions/checkout@v5
 
-      - name: Checkout openwrt-nss-edma
+      - name: Checkout openwrt-ppe-nss
         uses: actions/checkout@v5
         with:
           repository: ${{ env.UPSTREAM_REPO }}
@@ -67,12 +71,15 @@ jobs:
         id: week
         run: echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
+      # key 换新线前缀,restore-keys 兜到旧 nss-redmi-ax6 缓存,首次构建不全冷启
       - name: Restore dl/ cache
         uses: actions/cache/restore@v4
         with:
           path: openwrt/dl
-          key: dl-nss-redmi-ax6-${{ steps.week.outputs.week }}
-          restore-keys: dl-nss-redmi-ax6-
+          key: dl-ppe-nss-redmi-ax6-${{ steps.week.outputs.week }}
+          restore-keys: |
+            dl-ppe-nss-redmi-ax6-
+            dl-nss-redmi-ax6-
 
       - name: Restore toolchain cache (weekly)
         uses: actions/cache/restore@v4
@@ -82,11 +89,13 @@ jobs:
             openwrt/staging_dir/host*
             openwrt/build_dir/toolchain*
             openwrt/build_dir/host*
-          key: toolchain-nss-redmi-ax6-${{ steps.week.outputs.week }}
-          restore-keys: toolchain-nss-redmi-ax6-
+          key: toolchain-ppe-nss-redmi-ax6-${{ steps.week.outputs.week }}
+          restore-keys: |
+            toolchain-ppe-nss-redmi-ax6-
+            toolchain-nss-redmi-ax6-
 
       - name: seed → .config
-        run: bash scripts/prepare-build.sh configs/redmi-ax6-nss.seed openwrt configs/feeds.nss
+        run: bash scripts/prepare-build.sh configs/redmi-ax6-ppe-nss.seed openwrt configs/feeds.nss
 
       - name: Set reproducible-build env
         working-directory: openwrt
@@ -118,7 +127,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: openwrt/dl
-          key: dl-nss-redmi-ax6-${{ steps.week.outputs.week }}
+          key: dl-ppe-nss-redmi-ax6-${{ steps.week.outputs.week }}
 
       - name: Save toolchain cache
         if: always()
@@ -129,36 +138,39 @@ jobs:
             openwrt/staging_dir/host*
             openwrt/build_dir/toolchain*
             openwrt/build_dir/host*
-          key: toolchain-nss-redmi-ax6-${{ steps.week.outputs.week }}
+          key: toolchain-ppe-nss-redmi-ax6-${{ steps.week.outputs.week }}
 
       - name: Collect images
         run: |
-          out="out/nss-redmi-ax6"
+          out="out/ppe-nss-redmi-ax6"
           mkdir -p "$out"
           # OpenWrt 镜像文件名中设备 id 用下划线:redmi_ax6;通配符同时罩住两种写法
           find "openwrt/bin/targets/${TARGET_DIR}" -maxdepth 1 -type f \
             -name '*redmi*ax6*' -exec cp {} "$out"/ \;
           grep 'redmi.*ax6' "openwrt/bin/targets/${TARGET_DIR}/sha256sums" >"$out/sha256sums.txt" || true
           cp openwrt/.config "$out/config-full.defconfig"
-          cp configs/redmi-ax6-nss.seed configs/feeds.nss "$out/"
+          cp configs/redmi-ax6-ppe-nss.seed configs/feeds.nss "$out/"
           ls -lh "$out"
           [[ $(find "$out" -name '*sysupgrade*.bin' | wc -l) -gt 0 ]] || { echo '::error::no sysupgrade image'; exit 1; }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: nss-redmi-ax6
+          name: ppe-nss-redmi-ax6
           path: out/
 
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          tag="nss-redmi-ax6-$(date -u +%Y%m%d)"
+          tag="ppe-nss-redmi-ax6-$(date -u +%Y%m%d)"
           if ! gh release view "$tag" >/dev/null 2>&1; then
             gh release create "$tag" \
-              --title "NSS Redmi AX6 $(date -u +%F)" \
-              --notes "seed: configs/redmi-ax6-nss.seed @ ${{ github.sha }}
-          upstream: $UPSTREAM_REPO@$UPSTREAM_REF (HEAD at build time)"
+              --title "ppe-nss Redmi AX6 $(date -u +%F)" \
+              --notes "seed: configs/redmi-ax6-ppe-nss.seed @ ${{ github.sha }}
+          upstream: $UPSTREAM_REPO@$UPSTREAM_REF (HEAD at build time)
+
+          Wired offload runs in the PPE (fw4 flowtable / switchdev / tc); the
+          NSS firmware takes the Wi-Fi data path (on by default; \`uci set nss-wifi.general.offload=0\` to disable). Sysupgrade-only, flash over an existing OpenWrt install."
           fi
-          gh release upload "$tag" "out/nss-redmi-ax6/*" --clobber
+          gh release upload "$tag" "out/ppe-nss-redmi-ax6/*" --clobber

@@ -1,0 +1,137 @@
+#
+# Redmi AX6 (IPQ8071A, 512MB) — ppe-nss 固件
+#
+# 源码:JuliusBairaktaris/openwrt-ppe-nss@ppe-nss
+#   (OpenWrt main 6.18 + 主线 qca_edma/qca_ppe 驱动 + NSS Wi-Fi offload 系列)
+#
+# 模型(README 的表):
+#   有线  路由/NAT/PPPoE/VLAN、桥/组播嗅探、SQM 整形 → PPE(fw4 flowtable / switchdev / tc)
+#   无线  SoC 射频数据面、带 Wi-Fi 端点的流、到 Wi-Fi 的组播   → NSS 固件(nss-wifi-drv)
+#   Wi-Fi offload 默认开:uci set nss-wifi.general.offload='0'; uci commit nss-wifi; reboot
+#   802.11s mesh 需 NSS 固件 11.4:uci set nss-wifi.general.firmware='11.4' 后重启
+#
+# seed 组成:offload 栈 = 上游 seeds/qualcommax-nss-wifi.seed + Builder devices/common/config
+# 的 PPE 部分;工具链/加固 = Builder 同款;自选包 = 旧 qosmio main-nss config 提炼。
+#
+
+## Target:单设备,sysupgrade-only(无 factory/initramfs)
+CONFIG_TARGET_qualcommax=y
+CONFIG_TARGET_qualcommax_ipq807x=y
+CONFIG_TARGET_qualcommax_ipq807x_DEVICE_redmi_ax6=y
+# CONFIG_TARGET_ROOTFS_INITRAMFS is not set
+
+## 工具链优化(Builder 同款:GCC15 + LTO + MOLD;CI 走 toolchain 缓存,不用 ccache)
+CONFIG_BINUTILS_USE_VERSION_2_46=y
+CONFIG_DEVEL=y
+CONFIG_GCC_USE_VERSION_15=y
+CONFIG_TARGET_OPTIMIZATION="-O2 -pipe -mcpu=cortex-a53"
+CONFIG_TARGET_OPTIONS=y
+CONFIG_TOOLCHAINOPTS=y
+CONFIG_USE_GC_SECTIONS=y
+CONFIG_USE_LTO=y
+CONFIG_USE_MOLD=y
+CONFIG_ZLIB_OPTIMIZE_SPEED=y
+# CONFIG_CCACHE is not set
+
+## 内核与加固(Builder 同款)
+CONFIG_BUILD_PATENTED=y
+CONFIG_EXPERIMENTAL=y
+CONFIG_GCC_DEFAULT_PIE=y
+CONFIG_GCC_DEFAULT_SSP=y
+CONFIG_PKG_CHECK_FORMAT_SECURITY=y
+CONFIG_PKG_ASLR_PIE_ALL=y
+CONFIG_PKG_CC_STACKPROTECTOR_ALL=y
+CONFIG_KERNEL_CC_STACKPROTECTOR_STRONG=y
+CONFIG_PKG_FORTIFY_SOURCE_3=y
+CONFIG_PKG_RELRO_FULL=y
+CONFIG_USE_SECCOMP=y
+
+## NSS Wi-Fi offload:数据面跑 NSS 固件(ATH11K_NSS_WIFI 自动依赖 kmod-nss-wifi-drv,
+## 后者依赖 nss-firmware;固件行 12.5 默认,kmod 同时装 11.4 供 mesh 切换)
+CONFIG_PACKAGE_kmod-nss-wifi-drv=y
+CONFIG_ATH11K_NSS_WIFI=y
+CONFIG_NSS_FIRMWARE_VERSION_12_5=y
+
+## 有线 SQM 走 PPE 端口整形:hw_ppe.qos 由 patches/feeds/packages 把 sqm-scripts
+## 钉到 fork;luci-app-qca-ppe-qos 来自 configs/feeds.nss 的 luci fork
+CONFIG_PACKAGE_sqm-scripts=y
+CONFIG_PACKAGE_luci-app-sqm=y
+CONFIG_PACKAGE_qca-ppe-qos=y
+CONFIG_PACKAGE_luci-app-qca-ppe-qos=y
+
+## tc 用户态 + PPE offload 所需的 sched 模块
+## (flower 分类器;prio/mqprio/ets/red/gred 队列;police/pedit/vlan action)
+CONFIG_PACKAGE_tc-tiny=y
+CONFIG_PACKAGE_kmod-sched-flower=y
+CONFIG_PACKAGE_kmod-sched-prio=y
+CONFIG_PACKAGE_kmod-sched-act-police=y
+CONFIG_PACKAGE_kmod-sched-act-pedit=y
+CONFIG_PACKAGE_kmod-sched-act-vlan=y
+CONFIG_PACKAGE_kmod-sched-mqprio=y
+CONFIG_PACKAGE_kmod-sched-ets=y
+CONFIG_PACKAGE_kmod-sched-red=y
+CONFIG_PACKAGE_kmod-sched-gred=y
+
+## DCB(qca-ppe-qos 编程 DSCP→优先级映射用)+ 诊断工具
+CONFIG_PACKAGE_dcb=y
+CONFIG_PACKAGE_devlink=y
+CONFIG_PACKAGE_ethtool-full=y
+CONFIG_KERNEL_DCB=y
+CONFIG_PACKAGE_ppe-help=y
+
+## 组播路由(MFC 内核侧;要转发 WAN 组播需另装 igmpproxy/smcroute,刻意不装)
+CONFIG_KERNEL_IP_MROUTE=y
+CONFIG_KERNEL_IPV6_MROUTE=y
+# CONFIG_PACKAGE_igmpproxy is not set
+
+## 512MB 内存档:压缩 swap(Builder ipq807x-512m 组同款)
+CONFIG_PACKAGE_zram-swap=y
+
+## 崩溃取证:重启后把内核日志归档到 /root/pstore
+CONFIG_PACKAGE_kmod-ramoops=y
+
+## SSL/apk(openwrt main 系是 apk 包管理)
+CONFIG_LUA_ECO_MBEDTLS=n
+CONFIG_LUA_ECO_OPENSSL=y
+CONFIG_OPENSSL_OPTIMIZE_SPEED=y
+# CONFIG_PACKAGE_apk-mbedtls is not set
+CONFIG_PACKAGE_apk-openssl=y
+CONFIG_PACKAGE_libopenssl=y
+CONFIG_PACKAGE_libopenssl-oqsprovider=y
+CONFIG_PACKAGE_libustream-mbedtls=n
+CONFIG_PACKAGE_libustream-openssl=y
+CONFIG_PACKAGE_luci=y
+CONFIG_PACKAGE_luci-ssl-openssl=y
+
+## 用户自选(旧 qosmio config 挖掘:无线认证 + 802.11k/v + 监控)
+CONFIG_PACKAGE_wpad-openssl=y
+# CONFIG_PACKAGE_wpad-basic-mbedtls is not set
+CONFIG_PACKAGE_luci-app-dawn=y
+CONFIG_PACKAGE_dawn=y
+CONFIG_PACKAGE_luci-app-statistics=y
+CONFIG_PACKAGE_collectd-mod-cpu=y
+CONFIG_PACKAGE_collectd-mod-interface=y
+CONFIG_PACKAGE_collectd-mod-iwinfo=y
+CONFIG_PACKAGE_collectd-mod-load=y
+CONFIG_PACKAGE_collectd-mod-memory=y
+CONFIG_PACKAGE_collectd-mod-network=y
+CONFIG_PACKAGE_collectd-mod-rrdtool=y
+
+## 用户自选(运维工具,旧 config 原有)
+CONFIG_PACKAGE_curl=y
+CONFIG_LIBCURL_MBEDTLS=n
+CONFIG_LIBCURL_OPENSSL=y
+CONFIG_PACKAGE_htop=y
+CONFIG_HTOP_LMSENSORS=n
+CONFIG_PACKAGE_iperf3=y
+CONFIG_PACKAGE_rsync=y
+CONFIG_PACKAGE_socat=y
+CONFIG_PACKAGE_tcpdump=y
+
+## 刻意偏离 Builder 的项:
+##   - 保留 dropbear(用户旧配置默认),不切 openssh-server
+##   - 不装 luci-app-bcp38(不在国内网络场景)
+##   - 不开 CONFIG_ALL_KMODS/IB(那是 Builder 给多用户 kmod feed / image picker 的基建)
+##   - attendedsysupgrade 关闭:自定义内核的固件 ASU 服务的了,开着只会误导
+# CONFIG_PACKAGE_luci-app-attendedsysupgrade is not set
+# CONFIG_PACKAGE_attendedsysupgrade-common is not set

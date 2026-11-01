@@ -11,13 +11,18 @@ mode** (modeled after
 |---|---|---|---|---|
 | x86 box | Main router (gateway) | [immortalwrt](https://github.com/immortalwrt/immortalwrt) `master` | x86/64 generic | `configs/x86.seed` |
 | JDCloud RE-SP-01B | Wireless AP | same | ramips/mt7621 | `configs/jdcloud.seed` |
-| Redmi AX6 | Wireless AP (NSS hardware offload) | [openwrt-nss-edma](https://github.com/JuliusBairaktaris/openwrt-nss-edma) `nss-edma-rework` | qualcommax/ipq807x | `configs/redmi-ax6-nss.seed` |
+| Redmi AX6 | Wireless AP (PPE wired offload + NSS Wi-Fi offload) | [openwrt-ppe-nss](https://github.com/JuliusBairaktaris/openwrt-ppe-nss) `ppe-nss` | qualcommax/ipq807x | `configs/redmi-ax6-ppe-nss.seed` |
 
-The Redmi AX6 NSS stack (toolchain optimizations, hardening options, the
-full NSS kmod set, sqm-nss, luci-app-nss, …) is ported from the Builder's
-`devices/common/config` + `ipq807x-512m` group (512 MB memory profile), and
-`patches/feeds/luci/` carries its DSCP status-column patch. The Builder's
-`ppe` material (PPE-only test line) does not apply to this repo.
+The Redmi AX6 line follows the Builder's `ppe-nss` flavour: wired offload
+runs in the PPE through in-kernel interfaces (fw4 flowtable, switchdev, tc
+qdisc offload), and the NSS firmware takes only the Wi-Fi data path
+(`kmod-nss-wifi-drv`, on by default). Toolchain/hardening options and the
+PPE QoS stack (qca-ppe-qos + its LuCI page from the Builder's luci fork,
+tc-tiny, sched kmods, DCB) come from the Builder's `devices/common/config`
++ upstream `seeds/qualcommax-nss-wifi.seed`; `patches/feeds/packages/`
+repins sqm-scripts to the `hw_ppe` fork that drives the PPE port shaper.
+The old vendor-NSS line (qca-nss-drv/ECM/sqm-nss) was archived upstream and
+dropped here along with the switch.
 
 ## How It Works
 
@@ -51,13 +56,13 @@ a named list otherwise — a build that quietly omits a package never ships.
 - `dl/` and toolchain are cached **weekly** (actions/cache, restore + save
   with `if: always()` — a failed run still keeps its caches)
 - Artifacts on every run + automatic **Releases** (tags:
-  `immortalwrt-<device>-<date>` / `nss-redmi-ax6-<date>`), each release
+  `immortalwrt-<device>-<date>` / `ppe-nss-redmi-ax6-<date>`), each release
   carries the final full `.config` (`config-full.defconfig`) and the seed it
   was built from, for traceability
 
 The flashable file in each release is the `*-squashfs-sysupgrade.bin` (the
-NSS line is sysupgrade-only — no factory/initramfs; you must already run
-OpenWrt to flash it).
+Redmi AX6 line is sysupgrade-only — no factory/initramfs; you must already
+run OpenWrt to flash it).
 
 ## Changing the Configuration
 
@@ -80,9 +85,9 @@ Per-seed provenance:
 - `configs/jdcloud.seed` — distilled from
   `reference/immortalwrt-jdcloud-selector.txt` (package list; all 47
   packages hit); EIP93 hardware crypto. Note mt7621 is a ramips subtarget
-- `configs/redmi-ax6-nss.seed` — NSS stack aligned with the Builder's
-  edma-nss variant; user picks (wpad-openssl / luci-app-dawn /
-  luci-app-statistics / ops tools) distilled from
+- `configs/redmi-ax6-ppe-nss.seed` — ppe-nss offload stack as shipped by
+  the Builder (PPE wired + NSS Wi-Fi); user picks (wpad-openssl /
+  luci-app-dawn / luci-app-statistics / ops tools) distilled from
   `reference/openwrt-ipq-redmi-ax6.config` (legacy qosmio main-nss era)
 
 ## Layout
@@ -90,7 +95,7 @@ Per-seed provenance:
 ```
 ├── .github/workflows/
 │   ├── immortalwrt.yml      # x86-64 + jdcloud matrix
-│   └── nss-redmi-ax6.yml    # single device
+│   └── ppe-nss-redmi-ax6.yml # single device
 ├── configs/                 # active configuration (seeds + feed injections)
 ├── patches/feeds/           # feed patches (ported from the Builder)
 ├── scripts/prepare-build.sh # shared preparation script
@@ -105,26 +110,31 @@ transport:
 - **EDMA** — the Ethernet DMA driver (the mover; every packet that needs the
   CPU passes through it; already in openwrt mainline)
 - **PPE** — the switch-side flow-table engine (hardware forwarding/NAT, fully
-  open source; the base driver is in mainline via
-  [PR #22381](https://github.com/openwrt/openwrt/pull/22381), the full
-  feature set is under review in
+  open source; in mainline since
+  [PR #22381](https://github.com/openwrt/openwrt/pull/22381), with the
+  flowtable/tc/switchdev offload interfaces landing via
   [PR #24806](https://github.com/openwrt/openwrt/pull/24806))
-- **NSS** — dedicated acceleration cores + closed firmware blob + ECM
-  (highest throughput ceiling, includes Wi-Fi offload; the blob keeps it out
-  of mainline forever — it lives on in forks like nss-edma, which is what
-  this repo's NSS line uses)
+- **NSS** — dedicated acceleration cores + closed firmware blob (highest
+  throughput ceiling). The vendor host stack (qca-nss-drv/ECM/NSS qdiscs)
+  is archived; what survives is `nss-wifi-drv`, a small host driver that
+  boots the firmware and hands it the ath11k rings — Wi-Fi data-path
+  offload only, which is what this repo's AX6 line uses on top of the PPE
 
-The Redmi AX6 serves as an AP, and its main load is Wi-Fi↔Ethernet bridged
-forwarding — exactly the scenario NSS (wifili) is best at.
+The Redmi AX6 serves as an AP: bridging and routed flows run in the PPE,
+and the Wi-Fi data path runs on the NSS cores.
 
 ## Upstream References
 
 - https://github.com/immortalwrt/immortalwrt — ImmortalWrt master
-- https://github.com/JuliusBairaktaris/openwrt-nss-edma — NSS fork (branch
-  `nss-edma-rework`)
+- https://github.com/JuliusBairaktaris/openwrt-ppe-nss — OpenWrt main + PPE
+  drivers + NSS Wi-Fi offload (branch `ppe-nss`; the wiki's
+  [Migrating from edma-nss](https://github.com/JuliusBairaktaris/openwrt-ppe-nss/wiki/Migrating-from-edma-nss)
+  covers the old→new transition)
 - https://github.com/JuliusBairaktaris/Qualcommax_NSS_Builder — reference
-  implementation for the seed mode and the NSS stack (`docs/CUSTOMIZE.md`
-  is worth a read)
-- https://github.com/JuliusBairaktaris/nss-packages — NSS package feed
-  (`edma-nss`)
+  implementation for the seed mode and the ppe-nss image recipe
+  (`docs/CUSTOMIZE.md` is worth a read)
+- https://github.com/JuliusBairaktaris/nss-packages — NSS firmware feed
+  (branch `ppe-nss`), and
+  [JuliusBairaktaris/luci](https://github.com/JuliusBairaktaris/luci)
+  (branch `luci-app-ppe-qos`) standing in for the luci feed
 - passwall feeds: see `configs/feeds.immortalwrt`
