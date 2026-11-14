@@ -13,6 +13,7 @@ on:
       - 'configs/jdcloud.seed'
       - 'configs/feeds.immortalwrt'
       - 'configs/immortalwrt.files/**'
+      - 'patches/**' # patches/feeds/packages 是共用默认 feed 的补丁,失效会挂本线的 seed 步骤
       - 'scripts/**'
       - '.github/workflows/immortalwrt.yml'
 
