@@ -6,22 +6,29 @@
 #   3. 硬校验:seed 显式 =y 的符号必须存活(defconfig 静默丢弃 = 构建失败)
 #   4. 禁用自定义 feed 的 CONFIG_FEED_*(不把整个 feed 打进固件 distfeeds)
 #   5. 可选 files overlay:--files <目录> rsync 进源码树 files/(随镜像进 rootfs)
+#   6. 可选 patch 域:--patches-scope <名> 只打 patches/feeds/<名>/<feed>/*.patch。
+#      补丁按构建线分域(仿上游 Builder 的 <variant> 层):默认 feed 的补丁
+#      (如 sqm hw_ppe 只有 AX6 用)不钉域的话,别的线也要强行打得上,否则全挂。
 #
 # 用法: prepare-build.sh <seed 文件> <源码目录> [feeds 文件] [--prepend] [--files <目录>]
+#                       [--patches-scope <名>]
 #   feeds 文件:每行一条 "src-git <name> <url>[;<branch>]"。默认追加到末尾;
 #   --prepend 时插到头部(feed 越靠前优先级越高,保持文件内顺序)。
 #   --files:目录相对仓库根,内容叠加到 <源码目录>/files/(Builder 的 overlay 层,
 #   我们单设备单层即可;上游是 common→device→variant 多层)。
+#   --patches-scope:构建线域名;域目录不存在 = 该线没有补丁,正常跳过。
 #
 set -euo pipefail
 
 POSITIONAL=()
 PREPEND=""
 FILES_DIR=""
+PATCH_SCOPE=""
 while (($#)); do
   case "$1" in
     --prepend) PREPEND="--prepend"; shift ;;
     --files) FILES_DIR="$2"; shift 2 ;;
+    --patches-scope) PATCH_SCOPE="$2"; shift 2 ;;
     *) POSITIONAL+=("$1"); shift ;;
   esac
 done
@@ -75,10 +82,11 @@ fi
 ./scripts/feeds update -a
 ./scripts/feeds install -a
 
-# 1b. 给 feed 包打补丁:仓库根 patches/feeds/<feed>/*.patch(路径相对 feed 根)。
+# 1b. 给 feed 包打补丁:仓库根 patches/feeds/<scope>/<feed>/*.patch(路径相对 feed 根)。
 #     --forward 未应用则打上;--reverse 已应用则跳过;都不行则构建失败。
+#     域目录不存在(nullglob 空)= 该线没有补丁,静默跳过。
 shopt -s nullglob
-for p in "../patches/feeds/"*/*.patch; do
+for p in "../patches/feeds/${PATCH_SCOPE:?--patches-scope 必填(无补丁的线也要显式声明域)}"/*/*.patch; do
   feed="$(basename "$(dirname "$p")")"
   if [[ ! -d "feeds/$feed" ]]; then
     echo "WARN: feeds/$feed 不存在,跳过 $(basename "$p")" >&2

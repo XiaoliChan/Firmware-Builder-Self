@@ -29,9 +29,10 @@ dropped here along with the switch.
 ```
 configs/<name>.seed ──┐
 configs/feeds.<line> ─┤→ scripts/prepare-build.sh
-patches/feeds/**      ─┘         │
+patches/feeds/<line>/ ─┘         │
                                  ├─ 1. inject feeds into feeds.conf (--prepend = top priority / append, idempotent)
-                                 ├─ 2. feed patches (patches/feeds/<feed>/*.patch; apply / skip-if-applied / fail)
+                                 ├─ 2. feed patches (patches/feeds/<line>/<feed>/*.patch, scoped per build line;
+                                 │     apply / skip-if-applied / fail)
                                  ├─ 3. seed → .config → make defconfig (dependencies resolved automatically)
                                  ├─ 4. hard check: every explicit =y symbol in the seed must survive,
                                  │     otherwise the build fails with a list
@@ -97,7 +98,7 @@ Per-seed provenance:
 │   ├── immortalwrt.yml      # x86-64 + jdcloud matrix
 │   └── ppe-nss-redmi-ax6.yml # single device
 ├── configs/                 # active configuration (seeds + feed injections)
-├── patches/feeds/           # feed patches (ported from the Builder)
+├── patches/feeds/<line>/    # feed patches, scoped per build line (ax6 / immortalwrt)
 ├── scripts/prepare-build.sh # shared preparation script
 └── reference/               # original source files (archive only, not built)
 ```
